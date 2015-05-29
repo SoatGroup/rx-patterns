@@ -1,6 +1,8 @@
 package fr.soat.java.rx.patterns;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -8,13 +10,12 @@ import com.mongodb.rx.client.MongoClient;
 import com.mongodb.rx.client.MongoClients;
 import com.mongodb.rx.client.MongoDatabase;
 import fr.soat.java.rx.api.Swapi;
+import fr.soat.java.rx.model.People;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import retrofit.RestAdapter;
 import rx.Observable;
-import rx.plugins.RxJavaErrorHandler;
-import rx.plugins.RxJavaPlugins;
 import rx.schedulers.Schedulers;
 
 /**
@@ -27,13 +28,6 @@ public class Patterns {
     private Swapi remoteApi;
 
     static {
-        RxJavaPlugins.getInstance().registerErrorHandler(new RxJavaErrorHandler() {
-            @Override
-            public void handleError(Throwable e) {
-                System.err.println("---- CATCH UNCATCHED ERROR ----");
-                e.printStackTrace();
-            }
-        });
         Logger.getLogger("org.mongodb").setLevel(Level.OFF);
         Logger.getLogger("com.mongodb").setLevel(Level.OFF);
     }
@@ -45,8 +39,11 @@ public class Patterns {
 
         database = mongoClient.getDatabase("starwars");
 
+        ExecutorService httpExecutor = Executors.newFixedThreadPool(4);
+
         RestAdapter restAdapter = new RestAdapter.Builder()
                 .setEndpoint("http://swapi.co/api/")
+                .setExecutors(httpExecutor, httpExecutor)
                 .setRequestInterceptor(request -> {
                     request.addHeader("User-Agent", "RxPatterns");
                     request.addHeader("Content-Type", "application/json");
@@ -89,6 +86,45 @@ public class Patterns {
                 .flatMap(people -> remoteApi.planet(people.getHomeworldId()))
                 .subscribe((planet) -> System.out.println("Planet name => " + planet.getName()), (e) -> latch.countDown(),
                         latch::countDown);
+
+        latch.await();
+    }
+
+    @Test
+    public void should_merge_values() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+
+        database.getCollection("emptyCollection")
+                .find()
+                .first()
+                .doOnSubscribe(() -> System.out.println("Will query MongoDB !"))
+                .single()
+                .map(doc -> new People(doc.getString("name")))
+                .retry(1)
+                .onErrorResumeNext(remoteApi.people(-1)
+                        .doOnError(
+                                (e) -> System.err.println("got this exception : " + e.getMessage() + ". Will fallback with default People"))
+                        .onErrorReturn((e) -> new People("Default People")))
+                .subscribe(System.out::println, (e) -> latch.countDown(), latch::countDown);
+
+        latch.await();
+    }
+
+    @Test
+    public void should_switch_on_error() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+
+        remoteApi.people(1).flatMap(luke -> {
+            Observable<String> vehicles = Observable.from(luke.getVehiclesIds())
+                    .flatMap(remoteApi::vehicle)
+                    .map(vehicle -> luke.getName() + " can drive " + vehicle.getName());
+
+            Observable<String> starships = Observable.from(luke.getStarshipsIds())
+                    .flatMap(remoteApi::starship)
+                    .map(starship -> luke.getName() + " can fly with " + starship.getName());
+
+            return Observable.merge(vehicles, starships);
+        }).subscribe(System.out::println, (e) -> latch.countDown(), latch::countDown);
 
         latch.await();
     }
