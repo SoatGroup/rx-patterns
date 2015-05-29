@@ -1,0 +1,7 @@
+{
+  "_id": {
+    "$oid": "5565c4178376b8efac95d2ae"
+  },
+  "peopleId": 2,
+  "planetId": 3
+}
