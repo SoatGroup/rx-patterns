@@ -84,7 +84,8 @@ public class Patterns {
                 .first()
                 .flatMap(doc -> remoteApi.people(doc.getInteger("peopleId")))
                 .flatMap(people -> remoteApi.planet(people.getHomeworldId()))
-                .subscribe((planet) -> System.out.println("Planet name => " + planet.getName()), (e) -> latch.countDown(),
+                .subscribe((planet) -> System.out.println("Planet name => " + planet.getName()),
+                        (e) -> latch.countDown(),
                         latch::countDown);
 
         latch.await();
@@ -92,26 +93,6 @@ public class Patterns {
 
     @Test
     public void should_merge_values() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-
-        database.getCollection("emptyCollection")
-                .find()
-                .first()
-                .doOnSubscribe(() -> System.out.println("Will query MongoDB !"))
-                .single()
-                .map(doc -> new People(doc.getString("name")))
-                .retry(1)
-                .onErrorResumeNext(remoteApi.people(-1)
-                        .doOnError(
-                                (e) -> System.err.println("got this exception : " + e.getMessage() + ". Will fallback with default People"))
-                        .onErrorReturn((e) -> new People("Default People")))
-                .subscribe(System.out::println, (e) -> latch.countDown(), latch::countDown);
-
-        latch.await();
-    }
-
-    @Test
-    public void should_switch_on_error() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
 
         remoteApi.people(1).flatMap(luke -> {
@@ -126,6 +107,27 @@ public class Patterns {
             return Observable.merge(vehicles, starships);
         }).subscribe(System.out::println, (e) -> latch.countDown(), latch::countDown);
 
+
+
+        latch.await();
+    }
+
+    @Test
+    public void should_switch_on_error() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+
+        database.getCollection("emptyCollection")
+                .find()
+                .first()
+                .doOnSubscribe(() -> System.out.println("Will query MongoDB !"))
+                .single()
+                .map(doc -> new People(doc.getString("name")))
+                .retry(1)
+                .onErrorResumeNext(remoteApi.people(-1)
+                        .doOnError(
+                                (e) -> System.err.println("got this exception : " + e.getMessage() + ". Will fallback with default People"))
+                        .onErrorReturn((e) -> new People("Default People")))
+                .subscribe(System.out::println, (e) -> latch.countDown(), latch::countDown);
         latch.await();
     }
 
