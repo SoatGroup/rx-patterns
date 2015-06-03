@@ -144,7 +144,7 @@ public class Patterns {
                 .concatMap(id -> remoteApi.planet(id)
                         .flatMap(planet -> Observable.from(planet.getResidentsIds())
                                         .flatMap(peopleId -> remoteApi.people(peopleId))
-                                        .map(people -> String.format("%s live on %s planet", people.getName(), planet.getName()))
+                                        .map(people -> String.format("%s lives on %s", people.getName(), planet.getName()))
                         ))
                 .subscribe(System.out::println, (e) -> latch.countDown(), latch::countDown);
 
